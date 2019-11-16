@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:sockets="http://www.mulesoft.org/schema/mule/sockets"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/sockets http://www.mulesoft.org/schema/mule/sockets/current/mule-sockets.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="d8e4206a-fa6f-4ea6-930d-bf0c369c1d70" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<salesforce:sfdc-config name="Salesforce_Config" doc:name="Salesforce Config" doc:id="7e105dd9-29e5-435c-a85a-422a54bfd7d5" >
+		<salesforce:cached-basic-connection username="rose.jacob2@apisero.com" password="Infy@123" securityToken="QYcInwF909Vj0dkbh5uimBFpe" />
+	</salesforce:sfdc-config>
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="19ccf4cc-f474-46d2-b07a-e081c2f7c813" >
+		<db:my-sql-connection host="db4free.net" port="3306" user="rjdb123" password="60a29ad8" database="rose_database" />
+	</db:config>
+	<file:config name="File_Config" doc:name="File Config" doc:id="57aa30f4-4ef9-40ef-924c-c267505d240e" >
+		<file:connection workingDir="D:\Rose\Rose\AnypointStudio" />
+	</file:config>
+	<flow name="dbToSF-store-Flow" doc:id="38ad4f01-9353-44cf-9faa-3e3f846fdc5e" >
+		<http:listener doc:name="Listener" doc:id="2d8412c8-f2af-4356-ac50-b86e3e90138e" path="/sfload" config-ref="HTTP_Listener_config"/>
+		<db:select doc:name="Select" doc:id="9f9edd4b-c4cd-4561-a84b-828642128504" config-ref="Database_Config">
+			<db:sql >select * from customers</db:sql>
+		</db:select>
+		<logger level="INFO" doc:name="Logger" doc:id="1dee1d6a-04a9-4c2f-b340-1103c87186f1" message="#[payload]"/>
+		<salesforce:create doc:name="Create" doc:id="61708853-d424-403d-ba1a-1f54ea9b0d70" config-ref="Salesforce_Config" type="Account">
+			<salesforce:records ><![CDATA[#[%dw 2.0
+output application/java
+---
+payload map ( payload01 , indexOfPayload01 ) -> {
+	Name: payload01.Name,
+	BillingStreet: payload01.Street,
+	BillingCity: payload01.City,
+	BillingState: payload01.State,
+	BillingPostalCode: payload01.ZipCode as String,
+	BillingCountry: payload01.Country as String,
+	Phone: payload01.Phone,
+	AccountNumber: payload01.AccNumber
+}]]]></salesforce:records>
+		</salesforce:create>
+		<ee:transform doc:name="Transform Message" doc:id="d13c8ffb-5a5e-4c75-bd27-85e757f060c6" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+    id: payload[0].id,
+    success: payload[0].success
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<flow name="retrieveFromSF-Flow" doc:id="b5c61708-45e4-4c21-9067-1c7805d2baf2" >
+		<http:listener doc:name="Listener" doc:id="58fed4f3-97e1-42cc-8ce8-3c18ac66bde5" config-ref="HTTP_Listener_config" path="/getsf"/>
+		<salesforce:query doc:name="Query" doc:id="2c21a60c-3355-4e22-8089-cde9c1eb9ce9" config-ref="Salesforce_Config">
+			<salesforce:salesforce-query >SELECT Id,Name,AccountNumber,BillingCity,BillingStreet,BillingState,BillingCountry,BillingPostalCode,Phone FROM Account</salesforce:salesforce-query>
+		</salesforce:query>
+		<ee:transform doc:name="Transform Message" doc:id="3d8e7687-2fcf-4f38-a286-40dee9a98567" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<flow name="updateCustomer-Flow" doc:id="4839f749-3a78-4a03-9143-ef9e095755f6" >
+		<http:listener doc:name="Listener" doc:id="9a0f46b4-258e-47f2-a5de-b54e36b2b1be" config-ref="HTTP_Listener_config" path="/update"/>
+		<logger level="INFO" doc:name="Logger" doc:id="74d5c2b8-0d2c-443e-b118-b2d8f4a43ddd"/>
+		<set-variable value="#[attributes.queryParams.AccNumber]" doc:name="Set Variable" doc:id="a4db129b-f685-4ea7-b2c6-b56522657283" variableName="acctno"/>
+		<salesforce:query doc:name="Query" doc:id="20ff6561-8d61-4e4b-ba66-26e3e0424576" config-ref="Salesforce_Config">
+			<salesforce:salesforce-query >SELECT Id,Name,AccountNumber,BillingCity,BillingStreet,BillingState,BillingCountry,BillingPostalCode,Phone FROM Account where AccountNumber = ':acctno'</salesforce:salesforce-query>
+			<salesforce:parameters ><![CDATA[#[output application/java
+---
+{
+	":acctno" : vars.acctno
+}]]]></salesforce:parameters>
+		</salesforce:query>
+		<ee:transform doc:name="Transform Message" doc:id="4597e034-fff4-421a-8727-558d1e11cf1f" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<salesforce:update doc:name="Update" doc:id="2ecc238c-0bf4-458a-9d09-4b3f6b906103" config-ref="Salesforce_Config" type="Account">
+			<salesforce:records><![CDATA[#[%dw 2.0
+output application/java
+---
+payload map ( payload01 , indexOfPayload01 ) -> {
+	Name: (attributes.queryParams.Name default payload01.Name),
+	BillingStreet: attributes.queryParams.Street default payload01.BillingStreet,
+	BillingCity: attributes.queryParams.City default payload01.BillingCity,
+	BillingState: attributes.queryParams.State default payload01.BillingState,
+	BillingPostalCode: attributes.queryParams.PostalCode default payload01.BillingPostalCode,
+	BillingCountry: attributes.queryParams.Country default payload01.BillingCountry,
+	Phone: attributes.queryParams.Phone default payload01.Phone,
+	AccountNumber: attributes.queryParams.AccNumber
+}]]]></salesforce:records>
+		</salesforce:update>
+	</flow>
+	<flow name="accpet-store-SF-Flow" doc:id="127b136d-fee2-43d1-bd59-d54f621deb73" >
+		<http:listener doc:name="Listener" doc:id="3eca822b-a0f4-4eda-b11d-c71be32874da" config-ref="HTTP_Listener_config" path="/insert" allowedMethods="POST"/>
+		<ee:transform doc:name="Transform Message" doc:id="22939b8c-f03a-423a-9a29-82454ca55560" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<salesforce:create doc:name="Create" doc:id="dd31f122-0416-426c-854d-4a18929b3fd5" config-ref="Salesforce_Config" type="Account">
+			<salesforce:records ><![CDATA[#[%dw 2.0
+output application/java
+---
+[{
+	Name: payload.Name default "" ,
+	BillingStreet: payload.Street default "" ,
+	BillingCity: payload.City default "" ,
+	BillingState: payload.State default "" ,
+	BillingPostalCode: payload.PostalCode default "",
+	BillingCountry: payload.Country default "",
+	Phone: payload.Phone default "" ,
+	AccountNumber: payload.AccNumber
+}]]]]></salesforce:records>
+		</salesforce:create>
+		<ee:transform doc:name="Transform Message" doc:id="827ca868-cabd-4e32-a4ab-26d8b68f16c7" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<flow name="sf-to-db-load-Flow" doc:id="5b7de387-2a54-4e01-8524-04080dab9b0d">
+		<scheduler doc:name="Scheduler" doc:id="c8266552-e97a-4cdf-9ae8-3a230b4df807" >
+			<scheduling-strategy >
+				<cron expression="0 10 23 * * ?" />
+			</scheduling-strategy>
+		</scheduler>
+		<salesforce:query doc:name="Query" doc:id="01ba1938-039e-496d-90a7-12644fb78a35" config-ref="Salesforce_Config">
+			<salesforce:salesforce-query>SELECT Name,AccountNumber,BillingCity,BillingStreet,BillingState,BillingCountry,BillingPostalCode,Phone FROM Account where AccountNumber = 'CC213425'</salesforce:salesforce-query>
+		</salesforce:query>
+		<logger level="INFO" doc:name="Logger" doc:id="bd006232-c522-44df-8c68-a9c19309a7ca" message="#[payload]"/>
+		<db:insert doc:name="Insert" doc:id="9d1b5023-d6fb-47dc-a608-999981029583" config-ref="Database_Config">
+			<db:sql >insert into customers (AccNumber, Name, Street, City, State, Country, ZipCode, Phone) values (:AccNumber,:name,:street,:city,:state,:country,:code,:phone)</db:sql>
+			<db:input-parameters ><![CDATA[#[{
+	'AccNumber': payload.AccountNumber,
+	'name': payload.Name,
+	'street': payload.BillingStreet,
+	'city': payload.BillingCity,
+	'state': payload.BillingState,
+	'country': payload.BillingCountry,
+	'code': payload.BillingPostalCode,
+	'phone': payload.Phone
+}]]]></db:input-parameters>
+		</db:insert>
+		<ee:transform doc:name="Transform Message" doc:id="b956f53e-7e52-4bf0-934b-4a8c9ea5ce2d">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    id: payload[0].id,
+    success: payload[0].success
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+</mule>
